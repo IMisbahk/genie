@@ -37,7 +37,7 @@ The Genie AI will be released with the following:
 2. Detailed instructions on running the Chess AI.  
 3. Ongoing support for improvements and community contributions.  
 
-Stay tuned for updates!  
+Stay tuned for updates! 
 
 ## Contributing  
 
@@ -47,7 +47,7 @@ We welcome contributions to improve Genie. Please follow these steps:
    ```bash  
    git checkout -b feature-branch-name  
    ```  
-3. Commit your changes:  
+3. Commit your changes: 
    ```bash  
    git commit -m "Description of changes"  
    ```  
@@ -60,3 +60,5 @@ We welcome contributions to improve Genie. Please follow these steps:
 ## License  
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.  
+
+With Love and caffiene, - Misbah Khursheed

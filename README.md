@@ -16,7 +16,7 @@ Genie is a cutting-edge Chess AI designed to predict optimal moves dynamically, 
 
 1. Clone the repository:  
    ```bash  
-   git clone https://github.com/yourusername/genie.git  
+   git clone https://github.com/IMisbahK/genie.git  
    cd genie  
    ```  
 

@@ -61,4 +61,4 @@ We welcome contributions to improve Genie. Please follow these steps:
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.  
 
-With Love and caffiene, - Misbah Khursheed
+With Love, - Misbah Khursheed

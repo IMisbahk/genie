@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Genie UI</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background: #fafafa; }
+        h1 { color: #5a2ee5; }
+        pre { background: #eee; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>🧞 Genie Dashboard</h1>
+    <p>Welcome to your local Genie repo!</p>
+    <div id="commits"></div>
+
+    <script>
+        async function loadCommits() {
+            const res = await fetch("/api/commits");
+            const commits = await res.json();
+            document.getElementById("commits").innerHTML =
+                "<h2>Commit history</h2><pre>" +
+                JSON.stringify(commits, null, 2) +
+                "</pre>";
+        }
+        loadCommits();
+    </script>
+</body>
+</html>

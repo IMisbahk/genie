@@ -7,7 +7,6 @@ use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, params};
-use sha2::{Sha256, Digest};
 use warp::Filter;
 
 #[derive(Serialize, Deserialize)]
@@ -55,6 +54,29 @@ pub fn init_project() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(&genie_dir)?;
     fs::create_dir_all(genie_dir.join("keys"))?;
 
+    let ignore_path = cwd.join(".genieignore");
+    if !ignore_path.exists() {
+        let default_ignore = "\
+target/
+build/
+dist/
+*.o
+*.so
+*.dll
+*.exe
+node_modules/
+.DS_Store
+.genie/
+.genieignore
+*.log
+cargo.lock
+cargo.toml
+.github/
+.gitignore
+";
+        fs::write(ignore_path, default_ignore)?;
+    }
+
     let since_epoch = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let cfg = Config {
         project_name,
@@ -85,7 +107,8 @@ pub fn init_project() -> Result<(), Box<dyn std::error::Error>> {
         "CREATE TABLE IF NOT EXISTS commit_files (
             commit_id INTEGER NOT NULL,
             file_path TEXT NOT NULL,
-            file_hash TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            last_modified INTEGER NOT NULL,
             PRIMARY KEY (commit_id, file_path)
         )",
         [],
@@ -93,7 +116,7 @@ pub fn init_project() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("🧞 Initialized Genie project at {}", genie_dir.display());
     println!("✔ Wrote config -> {}", cfg_path.display());
-    println!("✔ Created history.db with commits and commit_files tables");
+    println!("✔ Created history.db");
 
     Ok(())
 }
@@ -102,14 +125,6 @@ fn open_history() -> Option<Connection> {
     let cwd = env::current_dir().ok()?;
     let db_path = cwd.join(".genie/history.db");
     Connection::open(db_path).ok()
-}
-
-fn hash_file(path: &PathBuf) -> Option<String> {
-    let data = fs::read(path).ok()?;
-    let mut hasher = Sha256::new();
-    hasher.update(&data);
-    let result = hasher.finalize();
-    Some(format!("{:x}", result))
 }
 
 fn load_ignore_patterns(dir: &PathBuf) -> Vec<String> {
@@ -166,20 +181,32 @@ pub fn make_commit(message: &str) -> Result<(), Box<dyn std::error::Error>> {
         let cwd = env::current_dir()?;
         let ignore_patterns = load_ignore_patterns(&cwd);
         let files = list_files_recursive(&cwd, &ignore_patterns);
+
         let tx = conn.transaction()?;
+
         for file in files {
             if file.components().any(|c| c.as_os_str() == ".genie") {
                 continue;
             }
             if let Ok(rel_path) = file.strip_prefix(&cwd) {
-                if let Some(hash) = hash_file(&file) {
+                if let Ok(metadata) = fs::metadata(&file) {
+                    let file_size = metadata.len() as i64;
+                    let last_modified = metadata.modified()
+                        .ok()
+                        .and_then(|mtime| mtime.duration_since(UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(0);
+
+                    let file_path = rel_path.to_string_lossy().to_string();
+
                     tx.execute(
-                        "INSERT INTO commit_files (commit_id, file_path, file_hash) VALUES (?1, ?2, ?3)",
-                        params![id, rel_path.to_string_lossy(), hash],
+                        "INSERT INTO commit_files (commit_id, file_path, file_size, last_modified) VALUES (?1, ?2, ?3, ?4)",
+                        params![id, file_path, file_size, last_modified],
                     )?;
                 }
             }
         }
+
         tx.commit()?;
         println!("✅ Commit {} — \"{}\"", id, message);
     } else {
@@ -208,47 +235,59 @@ pub fn show_status() {
             |row| row.get(0),
         ).ok();
 
-        let mut tracked_files: HashMap<String, String> = HashMap::new();
+        let mut tracked_files: HashMap<String, (i64, i64)> = HashMap::new();
         if let Some(cid) = last_commit_id {
             let mut stmt = conn.prepare(
-                "SELECT file_path, file_hash FROM commit_files WHERE commit_id = ?1"
+                "SELECT file_path, file_size, last_modified FROM commit_files WHERE commit_id = ?1"
             ).unwrap();
             let rows = stmt
                 .query_map(params![cid], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
                 })
                 .unwrap();
             for row in rows.flatten() {
-                tracked_files.insert(row.0, row.1);
+                tracked_files.insert(row.0, (row.1, row.2));
             }
         }
 
         let ignore_patterns = load_ignore_patterns(&cwd);
         let files = list_files_recursive(&cwd, &ignore_patterns);
-        let mut actual_files: HashMap<String, String> = HashMap::new();
+
+        let mut actual_files: HashMap<String, (i64, i64)> = HashMap::new();
         for file in files {
             if file.components().any(|c| c.as_os_str() == ".genie") {
                 continue;
             }
             if let Ok(rel_path) = file.strip_prefix(&cwd) {
-                let rel_str = rel_path.to_string_lossy().to_string();
-                if let Some(hash) = hash_file(&file) {
-                    actual_files.insert(rel_str, hash);
+                if let Ok(metadata) = fs::metadata(&file) {
+                    let file_size = metadata.len() as i64;
+                    let last_modified = metadata.modified()
+                        .ok()
+                        .and_then(|mtime| mtime.duration_since(UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(0);
+
+                    let file_path = rel_path.to_string_lossy().to_string();
+                    actual_files.insert(file_path, (file_size, last_modified));
                 }
             }
         }
 
         let mut untracked = Vec::new();
-        for (file, _) in actual_files.iter() {
+        for file in actual_files.keys() {
             if !tracked_files.contains_key(file) {
                 untracked.push(file.clone());
             }
         }
 
         let mut modified = Vec::new();
-        for (file, hash) in actual_files.iter() {
-            if let Some(prev_hash) = tracked_files.get(file) {
-                if prev_hash != hash {
+        for (file, (size, modified_time)) in actual_files.iter() {
+            if let Some((prev_size, prev_modified)) = tracked_files.get(file) {
+                if prev_size != size || prev_modified != modified_time {
                     modified.push(file.clone());
                 }
             }
@@ -300,8 +339,7 @@ pub fn show_log() {
 }
 
 pub async fn start_ui_server() {
-    // Endpoint to get commits
-    let commits_route = warp::path!("api" / "commits")
+   let commits_route = warp::path!("api" / "commits")
         .and(warp::get())
         .map(|| {
             if let Some(conn) = open_history() {
@@ -326,7 +364,6 @@ pub async fn start_ui_server() {
             }
         });
 
-    // Endpoint to get files for last commit
     let files_route = warp::path!("api" / "files")
         .and(warp::get())
         .map(|| {
@@ -339,13 +376,14 @@ pub async fn start_ui_server() {
 
                 if let Some(cid) = last_commit_id {
                     let mut stmt = conn.prepare(
-                        "SELECT file_path, file_hash FROM commit_files WHERE commit_id = ?1"
+                        "SELECT file_path, file_size, last_modified FROM commit_files WHERE commit_id = ?1"
                     ).unwrap();
                     let rows = stmt
                         .query_map(params![cid], |row| {
                             Ok(serde_json::json!({
                                 "file_path": row.get::<_, String>(0)?,
-                                "file_hash": row.get::<_, String>(1)?,
+                                "file_size": row.get::<_, i64>(1)?,
+                                "last_modified": row.get::<_, i64>(2)?,
                             }))
                         })
                         .unwrap();
@@ -360,8 +398,8 @@ pub async fn start_ui_server() {
             }
         });
 
-    let routes = commits_route.or(files_route);
-
-    println!("🚀 Starting Genie UI server at http://localhost:3030");
+    let static_files = warp::fs::dir("ui");
+    let routes = commits_route.or(files_route).or(static_files);
+    println!("🚀 Starting Genie UI server at http://localhost:2718");
     warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
 }

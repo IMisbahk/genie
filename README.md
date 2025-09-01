@@ -16,7 +16,7 @@ This makes commit and status operations near-instant, even on large projects.
 Clone the repository and build with Cargo
 
 ```bash
-git clone https://github.com/your-username/genie.git
+git clone https://github.com/imisbahk/genie.git
 cd genie
 cargo build --release
 ```

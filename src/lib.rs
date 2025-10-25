@@ -134,12 +134,9 @@ node_modules/\n
     f.flush()?;
 
     fs::File::create(genie_dir.join("lock"))?;
-    // initialize HEAD to point to main
     fs::write(genie_dir.join("HEAD"), "ref: refs/heads/main\n")?;
-    // create an empty refs/heads/main marker
     fs::write(genie_dir.join("refs/heads/main"), b"")?;
 
-    // Register project globally
     add_to_registry(&cfg.project_name, cwd.to_string_lossy().as_ref(), since_epoch);
 
     let conn = Connection::open(genie_dir.join("history.db"))?;
@@ -182,9 +179,6 @@ fn open_history_for_path(path: &str) -> Option<Connection> {
     Connection::open(db_path).ok()
 }
 
-// registry helpers moved to registry module
-
-// ignore helpers moved to ignore module
 
 pub fn make_commit(message: &str) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(mut conn) = open_history() {
@@ -457,7 +451,6 @@ pub async fn start_ui_server(port: Option<u16>) {
             }
         });
 
-    // List all projects from global registry
     let projects_route = warp::path!("api" / "projects")
         .and(warp::get())
         .map(|| {
@@ -470,7 +463,6 @@ pub async fn start_ui_server(port: Option<u16>) {
             warp::reply::json(&out)
         });
 
-    // Per-project commits
     let project_commits = warp::path!("api" / "project" / String / "commits")
         .and(warp::get())
         .map(|name: String| {
@@ -497,7 +489,6 @@ pub async fn start_ui_server(port: Option<u16>) {
             warp::reply::json(&Vec::<serde_json::Value>::new())
         });
 
-    // Per-project files (last commit)
     let project_files = warp::path!("api" / "project" / String / "files")
         .and(warp::get())
         .map(|name: String| {
@@ -530,9 +521,7 @@ pub async fn start_ui_server(port: Option<u16>) {
             warp::reply::json(&Vec::<serde_json::Value>::new())
         });
 
-    // Redirect / to /main.html for convenience
     let index_redirect = warp::path::end().map(|| warp::redirect::temporary(Uri::from_static("/main.html")));
-    // Support SPA-style deep link /project/:name by redirecting to /main.html
     let project_redirect = warp::path!("project" / String)
         .and(warp::path::end())
         .map(|_name: String| warp::redirect::temporary(Uri::from_static("/main.html")));

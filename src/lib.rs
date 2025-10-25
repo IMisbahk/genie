@@ -1,19 +1,51 @@
 use clap::{Parser, Subcommand};
+use clap::CommandFactory;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
-use std::io::{self, BufRead, Write};
+use std::io::Write;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, params};
 use warp::Filter;
+use warp::http::Uri;
+use serde_json::json;
+pub mod registry;
+use crate::registry::{load_registry, add_to_registry};
+pub mod ignore;
+use crate::ignore::{build_ignore_set, list_files_recursive};
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
     pub project_name: String,
     pub created_at_unix: u64,
     pub genie_version: &'static str,
+}
+
+pub fn show_welcome() {
+    println!("\n🧞‍♂️ Welcome to Genie!");
+    println!("Fast, simple personal version control\n");
+    println!("Quickstart:");
+    println!("  1) cd into a project and run: genie init");
+    println!("  2) check changes: genie status");
+    println!("  3) commit: genie commit -m \"Your message\"\n");
+    println!("UI Dashboard:");
+    println!("  genie ui  # then open http://localhost:2718\n");
+    println!("Next steps: 'genie docs' or 'genie --help'\n");
+}
+
+pub fn open_docs() {
+    let url = "https://github.com/imisbahk/genie#readme";
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(url).status();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(url).status();
+    }
+    println!("Documentation: {}", url);
 }
 
 #[derive(Parser)]
@@ -33,7 +65,18 @@ pub enum Commands {
         message: Option<String>,
     },
     Log,
-    Ui,
+    Ui {
+        #[arg(long)]
+        port: Option<u16>,
+    },
+    Completions {
+        #[arg(value_parser = ["bash", "zsh", "fish"].into_iter().collect::<Vec<_>>())]
+        shell: String,
+    },
+    Man,
+    SelfUpdate,
+    Welcome,
+    Docs,
 }
 
 pub fn init_project() -> Result<(), Box<dyn std::error::Error>> {
@@ -53,26 +96,26 @@ pub fn init_project() -> Result<(), Box<dyn std::error::Error>> {
 
     fs::create_dir_all(&genie_dir)?;
     fs::create_dir_all(genie_dir.join("keys"))?;
+    fs::create_dir_all(genie_dir.join("refs"))?;
+    fs::create_dir_all(genie_dir.join("refs/heads"))?;
 
     let ignore_path = cwd.join(".genieignore");
     if !ignore_path.exists() {
         let default_ignore = "\
-target/
-build/
-dist/
-*.o
-*.so
-*.dll
-*.exe
-node_modules/
-.DS_Store
-.genie/
-.genieignore
-*.log
-cargo.lock
-cargo.toml
-.github/
-.gitignore
+target/\n
+build/\n
+dist/\n
+node_modules/\n
+.git/\n
+.DS_Store\n
+.genie/\n
+*.o\n
+*.so\n
+*.dll\n
+*.exe\n
+*.log\n
+.github/\n
+.gitignore\n
 ";
         fs::write(ignore_path, default_ignore)?;
     }
@@ -91,6 +134,13 @@ cargo.toml
     f.flush()?;
 
     fs::File::create(genie_dir.join("lock"))?;
+    // initialize HEAD to point to main
+    fs::write(genie_dir.join("HEAD"), "ref: refs/heads/main\n")?;
+    // create an empty refs/heads/main marker
+    fs::write(genie_dir.join("refs/heads/main"), b"")?;
+
+    // Register project globally
+    add_to_registry(&cfg.project_name, cwd.to_string_lossy().as_ref(), since_epoch);
 
     let conn = Connection::open(genie_dir.join("history.db"))?;
     conn.execute(
@@ -127,47 +177,14 @@ fn open_history() -> Option<Connection> {
     Connection::open(db_path).ok()
 }
 
-fn load_ignore_patterns(dir: &PathBuf) -> Vec<String> {
-    let ignore_path = dir.join(".genieignore");
-    if !ignore_path.exists() {
-        return Vec::new();
-    }
-
-    let file = fs::File::open(ignore_path).unwrap();
-    io::BufReader::new(file)
-        .lines()
-        .flatten()
-        .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
-        .collect()
+fn open_history_for_path(path: &str) -> Option<Connection> {
+    let db_path = PathBuf::from(path).join(".genie/history.db");
+    Connection::open(db_path).ok()
 }
 
-fn list_files_recursive(dir: &PathBuf, ignore_patterns: &Vec<String>) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Ok(rel_path) = path.strip_prefix(dir) {
-                let rel_str = rel_path.to_string_lossy().to_string();
+// registry helpers moved to registry module
 
-                if ignore_patterns.iter().any(|p| rel_str.contains(p) || path.ends_with(p)) {
-                    continue;
-                }
-            }
-
-            if path.is_dir() {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if name == ".genie" {
-                        continue;
-                    }
-                }
-                files.extend(list_files_recursive(&path, ignore_patterns));
-            } else {
-                files.push(path);
-            }
-        }
-    }
-    files
-}
+// ignore helpers moved to ignore module
 
 pub fn make_commit(message: &str) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(mut conn) = open_history() {
@@ -179,8 +196,8 @@ pub fn make_commit(message: &str) -> Result<(), Box<dyn std::error::Error>> {
         let id: i64 = conn.last_insert_rowid();
 
         let cwd = env::current_dir()?;
-        let ignore_patterns = load_ignore_patterns(&cwd);
-        let files = list_files_recursive(&cwd, &ignore_patterns);
+        let ignore_set = build_ignore_set(&cwd);
+        let files = list_files_recursive(&cwd, &cwd, &ignore_set);
 
         let tx = conn.transaction()?;
 
@@ -254,8 +271,8 @@ pub fn show_status() {
             }
         }
 
-        let ignore_patterns = load_ignore_patterns(&cwd);
-        let files = list_files_recursive(&cwd, &ignore_patterns);
+        let ignore_patterns = build_ignore_set(&cwd);
+        let files = list_files_recursive(&cwd, &cwd, &ignore_patterns);
 
         let mut actual_files: HashMap<String, (i64, i64)> = HashMap::new();
         for file in files {
@@ -338,7 +355,49 @@ pub fn show_log() {
     }
 }
 
-pub async fn start_ui_server() {
+pub fn generate_completions(shell: &str) {
+    use clap_complete::{generate, shells};
+    let mut cmd = Cli::command();
+    match shell {
+        "bash" => generate(shells::Bash, &mut cmd, "genie", &mut std::io::stdout()),
+        "zsh" => generate(shells::Zsh, &mut cmd, "genie", &mut std::io::stdout()),
+        "fish" => generate(shells::Fish, &mut cmd, "genie", &mut std::io::stdout()),
+        _ => eprintln!("Unsupported shell: {}", shell),
+    }
+}
+
+pub fn print_man() {
+    let cmd = Cli::command();
+    let man = clap_mangen::Man::new(cmd);
+    let mut buf: Vec<u8> = Vec::new();
+    man.render(&mut buf).ok();
+    let _ = std::io::stdout().write_all(&buf);
+}
+
+pub fn do_self_update() {
+    // Adjust owner/repo if different
+    let status = self_update::backends::github::Update::configure()
+        .repo_owner("imisbahk")
+        .repo_name("genie")
+        .bin_name("genie")
+        .show_download_progress(true)
+        .no_confirm(true)
+        .current_version(env!("CARGO_PKG_VERSION"))
+        .build();
+
+    match status {
+        Ok(upd) => {
+            match upd.update() {
+                Ok(u) => println!("Updated to {}", u.version()),
+                Err(e) => eprintln!("Self-update failed: {}", e),
+            }
+        }
+        Err(e) => eprintln!("Failed to configure updater: {}", e),
+    }
+}
+
+pub async fn start_ui_server(port: Option<u16>) {
+    let port = port.unwrap_or(2718);
    let commits_route = warp::path!("api" / "commits")
         .and(warp::get())
         .map(|| {
@@ -348,7 +407,7 @@ pub async fn start_ui_server() {
                     .unwrap();
                 let rows = stmt
                     .query_map([], |row| {
-                        Ok(serde_json::json!({
+                        Ok(json!({
                             "id": row.get::<_, i64>(0)?,
                             "timestamp": row.get::<_, i64>(1)?,
                             "message": row.get::<_, String>(2)?,
@@ -380,7 +439,7 @@ pub async fn start_ui_server() {
                     ).unwrap();
                     let rows = stmt
                         .query_map(params![cid], |row| {
-                            Ok(serde_json::json!({
+                            Ok(json!({
                                 "file_path": row.get::<_, String>(0)?,
                                 "file_size": row.get::<_, i64>(1)?,
                                 "last_modified": row.get::<_, i64>(2)?,
@@ -398,8 +457,95 @@ pub async fn start_ui_server() {
             }
         });
 
+    // List all projects from global registry
+    let projects_route = warp::path!("api" / "projects")
+        .and(warp::get())
+        .map(|| {
+            let entries = load_registry();
+            let out: Vec<_> = entries.into_iter().map(|e| json!({
+                "name": e.name,
+                "path": e.path,
+                "created_at": e.created_at_unix,
+            })).collect();
+            warp::reply::json(&out)
+        });
+
+    // Per-project commits
+    let project_commits = warp::path!("api" / "project" / String / "commits")
+        .and(warp::get())
+        .map(|name: String| {
+            let entries = load_registry();
+            if let Some(e) = entries.into_iter().find(|e| e.name == name) {
+                if let Some(conn) = open_history_for_path(&e.path) {
+                    let mut stmt = conn
+                        .prepare("SELECT id, timestamp, message, author FROM commits ORDER BY id ASC")
+                        .unwrap();
+                    let rows = stmt
+                        .query_map([], |row| {
+                            Ok(json!({
+                                "id": row.get::<_, i64>(0)?,
+                                "timestamp": row.get::<_, i64>(1)?,
+                                "message": row.get::<_, String>(2)?,
+                                "author": row.get::<_, String>(3)?,
+                            }))
+                        })
+                        .unwrap();
+                    let commits: Vec<_> = rows.filter_map(Result::ok).collect();
+                    return warp::reply::json(&commits);
+                }
+            }
+            warp::reply::json(&Vec::<serde_json::Value>::new())
+        });
+
+    // Per-project files (last commit)
+    let project_files = warp::path!("api" / "project" / String / "files")
+        .and(warp::get())
+        .map(|name: String| {
+            let entries = load_registry();
+            if let Some(e) = entries.into_iter().find(|e| e.name == name) {
+                if let Some(conn) = open_history_for_path(&e.path) {
+                    let last_commit_id: Option<i64> = conn.query_row(
+                        "SELECT id FROM commits ORDER BY id DESC LIMIT 1",
+                        [],
+                        |row| row.get(0),
+                    ).ok();
+                    if let Some(cid) = last_commit_id {
+                        let mut stmt = conn.prepare(
+                            "SELECT file_path, file_size, last_modified FROM commit_files WHERE commit_id = ?1"
+                        ).unwrap();
+                        let rows = stmt
+                            .query_map(params![cid], |row| {
+                                Ok(json!({
+                                    "file_path": row.get::<_, String>(0)?,
+                                    "file_size": row.get::<_, i64>(1)?,
+                                    "last_modified": row.get::<_, i64>(2)?,
+                                }))
+                            })
+                            .unwrap();
+                        let files: Vec<_> = rows.filter_map(Result::ok).collect();
+                        return warp::reply::json(&files);
+                    }
+                }
+            }
+            warp::reply::json(&Vec::<serde_json::Value>::new())
+        });
+
+    // Redirect / to /main.html for convenience
+    let index_redirect = warp::path::end().map(|| warp::redirect::temporary(Uri::from_static("/main.html")));
+    // Support SPA-style deep link /project/:name by redirecting to /main.html
+    let project_redirect = warp::path!("project" / String)
+        .and(warp::path::end())
+        .map(|_name: String| warp::redirect::temporary(Uri::from_static("/main.html")));
+
     let static_files = warp::fs::dir("ui");
-    let routes = commits_route.or(files_route).or(static_files);
-    println!("🚀 Starting Genie UI server at http://localhost:2718");
-    warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
+    let routes = commits_route
+        .or(files_route)
+        .or(projects_route)
+        .or(project_commits)
+        .or(project_files)
+        .or(index_redirect)
+        .or(project_redirect)
+        .or(static_files);
+    println!("🚀 Starting Genie UI server at http://localhost:{}", port);
+    warp::serve(routes).run(([127, 0, 0, 1], port)).await;
 }

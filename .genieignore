@@ -1,0 +1,14 @@
+target/
+build/
+dist/
+node_modules/
+.git/
+.DS_Store
+.genie/
+*.o
+*.so
+*.dll
+*.exe
+*.log
+.github/
+.gitignore

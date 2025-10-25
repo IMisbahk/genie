@@ -1,4 +1,7 @@
-/target
+/target/debug/
+/target/release/deps/
+/target/release/.fingerprint/
+/target/release/build
 .gitignore
 .genie
 /test

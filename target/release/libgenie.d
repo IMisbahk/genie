@@ -1,0 +1,1 @@
+/Users/misbahkhursheed/Developer/genie/target/release/libgenie.rlib: /Users/misbahkhursheed/Developer/genie/src/ignore.rs /Users/misbahkhursheed/Developer/genie/src/lib.rs /Users/misbahkhursheed/Developer/genie/src/registry.rs

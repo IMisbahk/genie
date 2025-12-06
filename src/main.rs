@@ -1,5 +1,5 @@
 use clap::Parser;
-use genie::{Cli, Commands};
+use genie::{Cli, Commands, LogOptions, StatusOptions};
 
 #[tokio::main]
 async fn main() {
@@ -7,63 +7,83 @@ async fn main() {
 
     match &cli.command {
         Some(Commands::Ui { port }) => {
-            genie::start_ui_server(*port).await;
+            genie::startUiServer(*port).await;
         }
         Some(Commands::Init) => {
-            if let Err(e) = genie::init_project() {
+            if let Err(e) = genie::initProject() {
                 eprintln!("Initialization failed: {}", e);
                 std::process::exit(1);
             }
         }
-        Some(Commands::Status) => {
-            genie::show_status();
+        Some(Commands::Status {
+            jsonMode,
+            includeFiles,
+            deepCompare,
+        }) => {
+            genie::showStatus(StatusOptions {
+                jsonMode: *jsonMode,
+                includeFiles: *includeFiles,
+                deepCompare: *deepCompare,
+            });
         }
-        Some(Commands::Commit { message }) => {
-            match message {
-                Some(msg) => {
-                    if let Err(e) = genie::make_commit(msg) {
-                        eprintln!("Commit failed: {}", e);
-                    }
-                }
-                None => {
-                    println!("Example: genie commit -m \"Initial commit\"");
+        Some(Commands::Commit { message }) => match message {
+            Some(msg) => {
+                if let Err(e) = genie::makeCommit(msg) {
+                    eprintln!("Commit failed: {}", e);
                 }
             }
+            None => {
+                println!("Example: genie commit -m \"Initial commit\"");
+            }
+        },
+        Some(Commands::Log { jsonMode, limit }) => {
+            genie::showLog(LogOptions {
+                jsonMode: *jsonMode,
+                limit: *limit,
+            });
         }
-        Some(Commands::Log) => {
-            genie::show_log();
+        Some(Commands::Watch {
+            intervalSeconds,
+            includeFiles,
+            deepCompare,
+        }) => {
+            genie::watchStatus(*intervalSeconds, *includeFiles, *deepCompare).await;
+        }
+        Some(Commands::Guard {
+            maxFileMegabytes,
+            jsonMode,
+            strictMode,
+        }) => {
+            genie::runGuard(*maxFileMegabytes, *jsonMode, *strictMode);
+        }
+        Some(Commands::Insights { jsonMode, topFiles }) => {
+            genie::showInsights(*jsonMode, *topFiles);
+        }
+        Some(Commands::Projects {
+            jsonMode,
+            includeDetails,
+        }) => {
+            genie::showProjects(*jsonMode, *includeDetails);
         }
         Some(Commands::Completions { shell }) => {
-            genie::generate_completions(shell);
+            genie::generateCompletions(shell);
         }
         Some(Commands::Man) => {
-            genie::print_man();
+            genie::printMan();
         }
         Some(Commands::SelfUpdate) => {
-            genie::do_self_update();
+            genie::doSelfUpdate();
         }
         Some(Commands::Welcome) => {
-            genie::show_welcome();
+            genie::showWelcome();
         }
         Some(Commands::Docs) => {
-            genie::open_docs();
+            genie::openDocs();
         }
         None => {
             println!("🧞‍♂️ Welcome to Genie!");
             println!("Your personal version control system.");
-            println!("Run `genie --help` to see all available commands and options.");
-            println!("Usage: genie <command> [options]");
-            println!();
-            println!("Available commands:");
-            println!("  init       Initialize a new Genie project");
-            println!("  status     Show current project status");
-            println!("  commit     Commit changes (-m \"message\")");
-            println!("  log        Show commit history");
-            println!("  ui         Launch the Genie UI dashboard");
-            println!("  completions <shell>  Print shell completions (bash|zsh|fish)");
-            println!("  man        Print the CLI manual page");
-            println!("  self-update  Update to latest release");
-            println!();
+            println!("Run `genie --help` to explore the new guard/watch/insights commands.");
         }
     }
 }

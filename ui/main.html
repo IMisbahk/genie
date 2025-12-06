@@ -1,66 +1,567 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Genie UI</title>
+    <meta charset="UTF-8" />
+    <title>Genie Control Center</title>
     <style>
-        body { font-family: sans-serif; margin: 20px; background: #fafafa; }
-        h1 { color: #5a2ee5; }
-        pre { background: #eee; padding: 10px; border-radius: 5px; }
-        .projects { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
-        .card { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 12px; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
-        .card:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
-        .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        :root {
+            --bg: #0f172a;
+            --panel: #111c34;
+            --panel-alt: #142748;
+            --accent: #7c5dff;
+            --accent-soft: rgba(124, 93, 255, 0.12);
+            --text: #f8fbff;
+            --muted: #8fa2c7;
+            --border: rgba(255, 255, 255, 0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .app-shell {
+            padding: 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        header {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        header p {
+            margin: 0;
+            color: var(--muted);
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 16px;
+        }
+
+        .summary-card {
+            padding: 20px;
+            border-radius: 16px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .summary-card span {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+        }
+
+        .summary-card strong {
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 260px 1fr;
+            gap: 24px;
+        }
+
+        .sidebar {
+            background: var(--panel);
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            height: fit-content;
+            max-height: calc(100vh - 120px);
+            overflow-y: auto;
+        }
+
+        .sidebar h3 {
+            margin: 0;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+        }
+
+        .project-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .project-pill {
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 12px 14px;
+            background: transparent;
+            color: var(--text);
+            cursor: pointer;
+            text-align: left;
+            transition: border 0.1s ease, background 0.1s ease, transform 0.1s ease;
+        }
+
+        .project-pill:hover {
+            border-color: var(--accent);
+            transform: translateX(2px);
+        }
+
+        .project-pill.active {
+            background: var(--accent-soft);
+            border-color: var(--accent);
+        }
+
+        .project-pill strong {
+            display: block;
+            font-size: 15px;
+        }
+
+        .project-pill small {
+            color: var(--muted);
+        }
+
+        .main-panel {
+            background: transparent;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .panel {
+            background: var(--panel);
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            padding: 20px;
+        }
+
+        .panel h2 {
+            margin: 0 0 12px;
+            font-size: 18px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+        }
+
+        .mini-card {
+            background: var(--panel-alt);
+            border-radius: 16px;
+            padding: 16px;
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .mini-card span {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+        }
+
+        .mini-card strong {
+            font-size: 20px;
+        }
+
+        .mini-card small {
+            color: var(--muted);
+        }
+
+        .commits-list, .insight-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .commit-item {
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: var(--panel-alt);
+            border: 1px solid var(--border);
+        }
+
+        .commit-item strong {
+            display: block;
+            font-size: 15px;
+        }
+
+        .commit-meta {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 10px 6px;
+            font-size: 14px;
+            text-align: left;
+        }
+
+        th {
+            color: var(--muted);
+            font-weight: 500;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tbody tr + tr td {
+            border-top: 1px solid var(--border);
+        }
+
+        .two-col {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+        }
+
+        .empty-state {
+            padding: 20px;
+            border-radius: 16px;
+            border: 1px dashed var(--border);
+            color: var(--muted);
+        }
+
+        @media (max-width: 1024px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+            .sidebar {
+                position: sticky;
+                top: 16px;
+            }
+        }
     </style>
 </head>
 <body>
-    <h1>🧞 Genie Dashboard</h1>
-    <p>Browse your local Genie projects and inspect their history.</p>
-    <h2>Projects</h2>
-    <div id="projects" class="projects"></div>
+    <div class="app-shell">
+        <header>
+            <h1>🧞 Genie Control Center</h1>
+            <p>Personal GitHub-style dashboard for every Genie-tracked project on this machine.</p>
+        </header>
 
-    <div id="project-view" style="display:none;">
-        <h2 id="project-title"></h2>
-        <div class="split">
-            <div>
-                <h3>Commits</h3>
-                <pre id="project-commits"></pre>
-            </div>
-            <div>
-                <h3>Tracked Files (latest)</h3>
-                <pre id="project-files"></pre>
+        <section class="summary-grid" id="summary-grid"></section>
+
+        <div class="layout">
+            <aside class="sidebar">
+                <h3>Your Projects</h3>
+                <div class="project-list" id="projects"></div>
+            </aside>
+
+            <div class="main-panel" id="main-panel">
+                <div class="empty-state" id="empty-state">
+                    No Genie projects yet. Run <code>genie init</code> inside a repository and refresh this page.
+                </div>
+
+                <section class="panel" id="project-panel" style="display:none;">
+                    <h2 id="project-title">Project</h2>
+                    <div class="stats-grid" id="project-stats"></div>
+                </section>
+
+                <section class="panel" id="commits-panel" style="display:none;">
+                    <h2>Recent Commits</h2>
+                    <div class="commits-list" id="commits-list"></div>
+                </section>
+
+                <section class="panel" id="files-panel" style="display:none;">
+                    <h2>Tracked Files (latest snapshot)</h2>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Path</th>
+                                    <th>Size</th>
+                                    <th>Last Modified</th>
+                                </tr>
+                            </thead>
+                            <tbody id="files-table"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="panel" id="insights-panel" style="display:none;">
+                    <h2>Insights</h2>
+                    <div class="two-col">
+                        <div>
+                            <h3>Top Touched Files</h3>
+                            <div class="insight-list" id="top-files"></div>
+                        </div>
+                        <div>
+                            <h3>Largest Files</h3>
+                            <div class="insight-list" id="largest-files"></div>
+                        </div>
+                    </div>
+                    <div style="margin-top:20px;">
+                        <h3>File Type Mix</h3>
+                        <div class="insight-list" id="file-types"></div>
+                    </div>
+                </section>
             </div>
         </div>
     </div>
 
     <script>
-        async function loadProjects() {
-            const res = await fetch('/api/projects');
-            const projects = await res.json();
+        let projects = [];
+        let activeProject = null;
+
+        async function fetchJSON(url) {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`Request failed: ${url}`);
+            return res.json();
+        }
+
+        function formatBytes(bytes) {
+            if (!bytes && bytes !== 0) return '—';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let size = bytes;
+            let unit = 0;
+            while (size >= 1024 && unit < units.length - 1) {
+                size /= 1024;
+                unit += 1;
+            }
+            return unit === 0 ? `${bytes} ${units[unit]}` : `${size.toFixed(1)} ${units[unit]}`;
+        }
+
+        function relativeTime(ts) {
+            if (!ts) return 'never';
+            const diff = Date.now() / 1000 - ts;
+            if (diff < 60) return 'just now';
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+            return `${Math.floor(diff / 86400)}d ago`;
+        }
+
+        function exactTime(ts) {
+            if (!ts) return '—';
+            return new Date(ts * 1000).toLocaleString();
+        }
+
+        function setVisibility(id, visible) {
+            document.getElementById(id).style.display = visible ? 'block' : 'none';
+        }
+
+        function renderSummary(summary) {
+            const container = document.getElementById('summary-grid');
+            const cards = [
+                { label: 'Projects', value: summary.totalProjects },
+                { label: 'Commits', value: summary.totalCommits },
+                { label: 'Tracked Files', value: summary.totalTrackedFiles },
+                { label: 'Tracked Bytes', value: formatBytes(summary.totalTrackedBytes) },
+            ];
+            container.innerHTML = cards
+                .map(
+                    card => `
+                    <div class="summary-card">
+                        <span>${card.label}</span>
+                        <strong>${card.value}</strong>
+                    </div>`
+                )
+                .join('');
+        }
+
+        function renderProjects(list) {
             const container = document.getElementById('projects');
             container.innerHTML = '';
-            projects.forEach(p => {
-                const card = document.createElement('div');
-                card.className = 'card';
-                card.innerHTML = `<strong>${p.name}</strong><br><small>${p.path}</small>`;
-                card.onclick = () => openProject(p.name);
-                container.appendChild(card);
+            list.forEach(project => {
+                const pill = document.createElement('button');
+                pill.className = 'project-pill';
+                pill.dataset.project = project.name;
+                pill.innerHTML = `
+                    <strong>${project.name}</strong>
+                    <small>${project.commitCount ?? 0} commits · ${relativeTime(project.lastCommitTimestamp)}</small>
+                `;
+                pill.onclick = () => openProject(project.name);
+                container.appendChild(pill);
+            });
+            highlightActiveProject();
+        }
+
+        function highlightActiveProject() {
+            document.querySelectorAll('.project-pill').forEach(pill => {
+                pill.classList.toggle('active', pill.dataset.project === activeProject);
             });
         }
 
-        async function openProject(name) {
-            document.getElementById('project-title').textContent = `Project: ${name}`;
-            document.getElementById('project-view').style.display = 'block';
-            const [commitsRes, filesRes] = await Promise.all([
-                fetch(`/api/project/${encodeURIComponent(name)}/commits`),
-                fetch(`/api/project/${encodeURIComponent(name)}/files`),
-            ]);
-            const [commits, files] = await Promise.all([commitsRes.json(), filesRes.json()]);
-            document.getElementById('project-commits').textContent = JSON.stringify(commits, null, 2);
-            document.getElementById('project-files').textContent = JSON.stringify(files, null, 2);
+        function renderProjectStats(project, insights) {
+            const stats = document.getElementById('project-stats');
+            const avgPerDay = Number(insights?.avgCommitsPerDay ?? 0).toFixed(2);
+            const cards = [
+                {
+                    label: 'Commits',
+                    value: insights?.commitCount ?? project.commitCount ?? '—',
+                    sub: `${avgPerDay} avg/day`,
+                },
+                {
+                    label: 'Tracked Files',
+                    value: insights?.trackedFiles ?? project.trackedFiles ?? '—',
+                    sub: `${insights?.activeDays ?? 0} active days`,
+                },
+                {
+                    label: 'Footprint',
+                    value: formatBytes(insights?.trackedBytes ?? project.trackedBytes ?? 0),
+                    sub: 'latest snapshot',
+                },
+                {
+                    label: 'Last Commit',
+                    value: project.lastCommitTimestamp ? relativeTime(project.lastCommitTimestamp) : 'never',
+                    sub: project.latestCommitMessage ?? '—',
+                },
+            ];
+            stats.innerHTML = cards
+                .map(
+                    card => `
+                    <div class="mini-card">
+                        <span>${card.label}</span>
+                        <strong>${card.value}</strong>
+                        <small>${card.sub ?? ''}</small>
+                    </div>`
+                )
+                .join('');
         }
 
-        loadProjects();
+        function renderCommits(commits) {
+            const list = document.getElementById('commits-list');
+            if (!commits.length) {
+                list.innerHTML = '<div class="empty-state">No commits yet.</div>';
+                return;
+            }
+            const recent = commits.slice(-8).reverse();
+            list.innerHTML = recent
+                .map(
+                    commit => `
+                    <div class="commit-item">
+                        <strong>${commit.message}</strong>
+                        <div class="commit-meta">#${commit.id} · ${commit.author} · ${exactTime(commit.timestamp)}</div>
+                    </div>`
+                )
+                .join('');
+        }
+
+        function renderFiles(files) {
+            const tbody = document.getElementById('files-table');
+            if (!files.length) {
+                tbody.innerHTML = `<tr><td colspan="3" class="empty-state">No tracked files yet.</td></tr>`;
+                return;
+            }
+            const top = [...files]
+                .sort((a, b) => b.file_size - a.file_size)
+                .slice(0, 12);
+            tbody.innerHTML = top
+                .map(
+                    file => `
+                    <tr>
+                        <td>${file.file_path}</td>
+                        <td>${formatBytes(file.file_size)}</td>
+                        <td>${exactTime(file.last_modified)}</td>
+                    </tr>`
+                )
+                .join('');
+        }
+
+        function renderInsightList(containerId, items, formatter) {
+            const container = document.getElementById(containerId);
+            if (!items || !items.length) {
+                container.innerHTML = '<div class="empty-state">No data yet.</div>';
+                return;
+            }
+            container.innerHTML = items
+                .map(formatter)
+                .join('');
+        }
+
+        async function openProject(name) {
+            if (activeProject === name) return;
+            activeProject = name;
+            highlightActiveProject();
+            const meta = projects.find(p => p.name === name);
+            if (!meta) return;
+
+            document.getElementById('project-title').textContent = meta.name;
+            setVisibility('empty-state', false);
+            setVisibility('project-panel', true);
+            setVisibility('commits-panel', true);
+            setVisibility('files-panel', true);
+            setVisibility('insights-panel', true);
+
+            try {
+                const encoded = encodeURIComponent(name);
+                const [commits, files, insights] = await Promise.all([
+                    fetchJSON(`/api/project/${encoded}/commits`),
+                    fetchJSON(`/api/project/${encoded}/files`),
+                    fetchJSON(`/api/project/${encoded}/insights`).catch(() => null),
+                ]);
+
+                renderProjectStats(meta, insights);
+                renderCommits(commits);
+                renderFiles(files);
+                renderInsightList(
+                    'top-files',
+                    insights?.topFiles ?? [],
+                    item => `<div class="mini-card"><strong>${item.path}</strong><small>${item.touches} touches</small></div>`
+                );
+                renderInsightList(
+                    'largest-files',
+                    insights?.largestFiles ?? [],
+                    item => `<div class="mini-card"><strong>${item.path}</strong><small>${formatBytes(item.bytes)}</small></div>`
+                );
+                renderInsightList(
+                    'file-types',
+                    insights?.fileTypes ?? [],
+                    item => `<div class="mini-card"><strong>.${item.extension}</strong><small>${item.files} files · ${formatBytes(item.bytes)}</small></div>`
+                );
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function bootstrap() {
+            try {
+                const [summary, projectList] = await Promise.all([
+                    fetchJSON('/api/dashboard'),
+                    fetchJSON('/api/projects'),
+                ]);
+                projects = projectList;
+                renderSummary(summary);
+                renderProjects(projectList);
+                if (projectList.length > 0) {
+                    openProject(projectList[0].name);
+                } else {
+                    setVisibility('empty-state', true);
+                }
+            } catch (err) {
+                console.error(err);
+                document.getElementById('summary-grid').innerHTML = '<div class="empty-state">Failed to load dashboard data.</div>';
+            }
+        }
+
+        bootstrap();
     </script>
 </body>
 </html>

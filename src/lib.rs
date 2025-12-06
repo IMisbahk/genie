@@ -188,13 +188,26 @@ pub struct InsightReport {
     pub trackedBytes: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct ProjectSummary {
     pub name: String,
     pub path: String,
     pub createdAt: u64,
     pub commitCount: Option<i64>,
     pub lastCommitTimestamp: Option<i64>,
+    pub trackedFiles: Option<usize>,
+    pub trackedBytes: Option<u64>,
+    pub latestCommitMessage: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DashboardSummary {
+    pub totalProjects: usize,
+    pub totalCommits: i64,
+    pub totalTrackedFiles: usize,
+    pub totalTrackedBytes: u64,
+    pub hottestProject: Option<ProjectSummary>,
+    pub latestProject: Option<ProjectSummary>,
 }
 
 #[derive(Clone)]
@@ -922,19 +935,13 @@ pub async fn startUiServer(port: Option<u16>) {
     });
 
     let projectsRoute = warp::path!("api" / "projects").and(warp::get()).map(|| {
-        let entries = loadRegistry();
-        let out: Vec<_> = entries
-            .into_iter()
-            .map(|entry| {
-                json!({
-                    "name": entry.name,
-                    "path": entry.path,
-                    "created_at": entry.created_at_unix,
-                })
-            })
-            .collect();
-        warp::reply::json(&out)
+        let summaries = getProjectSummaries(true);
+        warp::reply::json(&summaries)
     });
+
+    let dashboardRoute = warp::path!("api" / "dashboard")
+        .and(warp::get())
+        .map(|| warp::reply::json(&buildDashboardSummary()));
 
     let projectCommits = warp::path!("api" / "project" / String / "commits")
         .and(warp::get())
@@ -1005,12 +1012,26 @@ pub async fn startUiServer(port: Option<u16>) {
         .map(|_name: String| warp::redirect::temporary(Uri::from_static("/main.html")));
 
     let staticFiles = warp::fs::dir("ui");
+    let projectInsightsRoute = warp::path!("api" / "project" / String / "insights")
+        .and(warp::get())
+        .map(|name: String| {
+            let entries = loadRegistry();
+            if let Some(entry) = entries.into_iter().find(|entry| entry.name == name) {
+                if let Some(report) = buildInsightReportForPath(Some(&entry.path), 5) {
+                    return warp::reply::json(&report);
+                }
+            }
+            warp::reply::json(&json!({ "error": "project not found" }))
+        });
+
     let routes = commitsRoute
         .or(filesRoute)
         .or(insightsRoute)
         .or(projectsRoute)
+        .or(dashboardRoute)
         .or(projectCommits)
         .or(projectFiles)
+        .or(projectInsightsRoute)
         .or(indexRedirect)
         .or(projectRedirect)
         .or(staticFiles);
@@ -1018,29 +1039,49 @@ pub async fn startUiServer(port: Option<u16>) {
     warp::serve(routes).run(([127, 0, 0, 1], port)).await;
 }
 
-fn buildInsightReport(topFiles: usize) -> Option<InsightReport> {
-    let snapshot = createStatusSnapshot(false)?;
-    let mut conn = openHistory()?;
-    let commitCount = snapshot.commitCount;
-
-    let mut firstCommit: Option<i64> = None;
-    let mut lastCommit: Option<i64> = None;
-    if commitCount > 0 {
-        firstCommit = conn
-            .query_row(
-                "SELECT timestamp FROM commits ORDER BY id ASC LIMIT 1",
-                [],
-                |row| row.get(0),
-            )
-            .ok();
-        lastCommit = conn
-            .query_row(
-                "SELECT timestamp FROM commits ORDER BY id DESC LIMIT 1",
-                [],
-                |row| row.get(0),
-            )
-            .ok();
+fn openHistoryContext(targetPath: Option<&str>) -> Option<(Connection, String)> {
+    match targetPath {
+        Some(path) => {
+            let conn = openHistoryForPath(path)?;
+            Some((conn, path.to_string()))
+        }
+        None => {
+            let conn = openHistory()?;
+            let cwd = env::current_dir().ok()?;
+            Some((conn, cwd.to_string_lossy().to_string()))
+        }
     }
+}
+
+fn buildInsightReport(topFiles: usize) -> Option<InsightReport> {
+    buildInsightReportForPath(None, topFiles)
+}
+
+fn buildInsightReportForPath(targetPath: Option<&str>, topFiles: usize) -> Option<InsightReport> {
+    let (conn, projectPath) = openHistoryContext(targetPath)?;
+
+    let commitCount: i64 = conn
+        .query_row("SELECT COUNT(*) FROM commits", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    let firstCommit = conn
+        .query_row(
+            "SELECT timestamp FROM commits ORDER BY id ASC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+
+    let lastCommitRow = conn
+        .query_row(
+            "SELECT id, timestamp FROM commits ORDER BY id DESC LIMIT 1",
+            [],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .ok();
+
+    let lastCommitId = lastCommitRow.map(|(id, _)| id);
+    let lastCommit = lastCommitRow.map(|(_, ts)| ts);
 
     let activeDays = match (firstCommit, lastCommit) {
         (Some(first), Some(last)) if last >= first => {
@@ -1056,7 +1097,7 @@ fn buildInsightReport(topFiles: usize) -> Option<InsightReport> {
         commitCount as f64 / activeDays as f64
     };
 
-    let mut topTouched: Vec<FileTouchStat> = Vec::new();
+    let mut topTouched = Vec::new();
     if let Ok(mut stmt) = conn.prepare(
         "SELECT file_path, COUNT(*) AS touches FROM commit_files GROUP BY file_path ORDER BY touches DESC LIMIT ?1",
     ) {
@@ -1070,8 +1111,8 @@ fn buildInsightReport(topFiles: usize) -> Option<InsightReport> {
         }
     }
 
-    let mut largestFiles: Vec<FileSizeStat> = Vec::new();
-    if let Some(commitId) = snapshot.lastCommitId {
+    let mut largestFiles = Vec::new();
+    if let Some(commitId) = lastCommitId {
         if let Ok(mut stmt) = conn.prepare(
             "SELECT file_path, file_size FROM commit_files WHERE commit_id = ?1 ORDER BY file_size DESC LIMIT ?2",
         ) {
@@ -1086,11 +1127,33 @@ fn buildInsightReport(topFiles: usize) -> Option<InsightReport> {
         }
     }
 
-    let recentCommits = gatherRecentCommits(&mut conn, 5);
-    let fileTypes = gatherFileTypeStats(&mut conn, snapshot.lastCommitId);
+    let recentCommits = gatherRecentCommits(&conn, 5);
+    let fileTypes = gatherFileTypeStats(&conn, lastCommitId);
+
+    let (trackedFiles, trackedBytes) = if let Some(commitId) = lastCommitId {
+        let files = conn
+            .query_row(
+                "SELECT COUNT(*) FROM commit_files WHERE commit_id = ?1",
+                params![commitId],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0) as usize;
+        let bytes = conn
+            .query_row(
+                "SELECT SUM(file_size) FROM commit_files WHERE commit_id = ?1",
+                params![commitId],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .ok()
+            .flatten()
+            .unwrap_or(0) as u64;
+        (files, bytes)
+    } else {
+        (0, 0)
+    };
 
     Some(InsightReport {
-        projectPath: snapshot.projectPath,
+        projectPath,
         commitCount,
         firstCommit,
         lastCommit,
@@ -1100,12 +1163,12 @@ fn buildInsightReport(topFiles: usize) -> Option<InsightReport> {
         largestFiles,
         recentCommits,
         fileTypes,
-        trackedFiles: snapshot.trackedFiles,
-        trackedBytes: snapshot.trackedBytes,
+        trackedFiles,
+        trackedBytes,
     })
 }
 
-fn gatherRecentCommits(conn: &mut Connection, limit: usize) -> Vec<CommitSummary> {
+fn gatherRecentCommits(conn: &Connection, limit: usize) -> Vec<CommitSummary> {
     if let Ok(mut stmt) =
         conn.prepare("SELECT id, timestamp, message, author FROM commits ORDER BY id DESC LIMIT ?1")
     {
@@ -1123,7 +1186,7 @@ fn gatherRecentCommits(conn: &mut Connection, limit: usize) -> Vec<CommitSummary
     Vec::new()
 }
 
-fn gatherFileTypeStats(conn: &mut Connection, commitId: Option<i64>) -> Vec<FileTypeStat> {
+fn gatherFileTypeStats(conn: &Connection, commitId: Option<i64>) -> Vec<FileTypeStat> {
     if let Some(commitId) = commitId {
         if let Ok(mut stmt) =
             conn.prepare("SELECT file_path, file_size FROM commit_files WHERE commit_id = ?1")
@@ -1354,14 +1417,9 @@ fn isLikelyText(bytes: &[u8]) -> bool {
     printable * 100 / bytes.len().max(1) > 80
 }
 
-pub fn showProjects(jsonMode: bool, includeDetails: bool) {
+pub fn getProjectSummaries(includeDetails: bool) -> Vec<ProjectSummary> {
     let entries = loadRegistry();
-    if entries.is_empty() {
-        println!("📚 Registry is empty. Run 'genie init' inside projects to register them.");
-        return;
-    }
-
-    let mut summaries: Vec<ProjectSummary> = Vec::new();
+    let mut summaries = Vec::new();
 
     for entry in entries {
         let mut summary = ProjectSummary {
@@ -1370,24 +1428,95 @@ pub fn showProjects(jsonMode: bool, includeDetails: bool) {
             createdAt: entry.created_at_unix,
             commitCount: None,
             lastCommitTimestamp: None,
+            trackedFiles: None,
+            trackedBytes: None,
+            latestCommitMessage: None,
         };
 
         if includeDetails {
             if let Some(conn) = openHistoryForPath(&entry.path) {
-                summary.commitCount = conn
-                    .query_row("SELECT COUNT(*) FROM commits", [], |row| row.get(0))
-                    .ok();
-                summary.lastCommitTimestamp = conn
-                    .query_row(
-                        "SELECT timestamp FROM commits ORDER BY id DESC LIMIT 1",
-                        [],
-                        |row| row.get(0),
-                    )
-                    .ok();
+                populateProjectStats(&mut summary, &conn);
             }
         }
 
         summaries.push(summary);
+    }
+
+    summaries
+}
+
+fn populateProjectStats(summary: &mut ProjectSummary, conn: &Connection) {
+    summary.commitCount = conn
+        .query_row("SELECT COUNT(*) FROM commits", [], |row| row.get(0))
+        .ok();
+
+    if let Ok((id, timestamp, message)) = conn.query_row(
+        "SELECT id, timestamp, message FROM commits ORDER BY id DESC LIMIT 1",
+        [],
+        |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        },
+    ) {
+        summary.lastCommitTimestamp = Some(timestamp);
+        summary.latestCommitMessage = Some(message);
+
+        summary.trackedFiles = conn
+            .query_row(
+                "SELECT COUNT(*) FROM commit_files WHERE commit_id = ?1",
+                params![id],
+                |row| row.get::<_, i64>(0),
+            )
+            .ok()
+            .map(|count| count as usize);
+
+        summary.trackedBytes = conn
+            .query_row(
+                "SELECT SUM(file_size) FROM commit_files WHERE commit_id = ?1",
+                params![id],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .ok()
+            .flatten()
+            .map(|bytes| bytes as u64);
+    }
+}
+
+pub fn buildDashboardSummary() -> DashboardSummary {
+    let projects = getProjectSummaries(true);
+    let totalProjects = projects.len();
+    let totalCommits: i64 = projects.iter().map(|p| p.commitCount.unwrap_or(0)).sum();
+    let totalTrackedFiles: usize = projects.iter().map(|p| p.trackedFiles.unwrap_or(0)).sum();
+    let totalTrackedBytes: u64 = projects.iter().map(|p| p.trackedBytes.unwrap_or(0)).sum();
+
+    let hottestProject = projects
+        .iter()
+        .cloned()
+        .max_by_key(|p| p.commitCount.unwrap_or(0));
+
+    let latestProject = projects
+        .iter()
+        .cloned()
+        .max_by_key(|p| p.lastCommitTimestamp.unwrap_or(0));
+
+    DashboardSummary {
+        totalProjects,
+        totalCommits,
+        totalTrackedFiles,
+        totalTrackedBytes,
+        hottestProject,
+        latestProject,
+    }
+}
+
+pub fn showProjects(jsonMode: bool, includeDetails: bool) {
+    let summaries = getProjectSummaries(includeDetails);
+    if summaries.is_empty() {
+        println!("📚 Registry is empty. Run 'genie init' inside projects to register them.");
+        return;
     }
 
     if jsonMode {

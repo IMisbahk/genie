@@ -16,6 +16,7 @@ Comes with a simple web dashboard, deep analytics, live watch mode, a hardened g
 	•	`genie guard` secret + bloat scanner with regex heuristics
 	•	`genie insights` repository analytics + export-ready JSON
 	•	`genie projects --details` to inspect every registered workspace
+	•	Personal GitHub-style web dashboard aggregating all Genie projects
 
 ## Installation
 

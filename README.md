@@ -1,16 +1,22 @@
 # Genie 🧞
 
 Genie is a lightweight, fast personal version control system.
-It tracks file changes using metadata (size + mtime), making commits and status near‑instant even on large projects.
-Comes with a simple web dashboard and a global registry of your projects.
+It tracks file changes using metadata and on-demand SHA-256 hashing, making commits and status near‑instant even on large projects.
+Comes with a simple web dashboard, deep analytics, live watch mode, a hardened guard scanner, and a global registry of your projects.
 
 ## Features
-	•	Instant status/commits via file metadata (no hashing)
+	•	Instant status/commits via file metadata with optional deep hashing
 	•	SQLite-backed commit history per project in .genie/
 	•	Glob-based .genieignore (powered by globset)
 	•	Web dashboard at http://localhost:2718 (or choose a port)
 	•	Global registry of projects at ~/.genie/registry.json
 	•	New commands for welcome, docs, completions, man page, and self-update
+	•	`genie status --deep/--json` for hash-verified change detection
+	•	`genie watch` live monitor with Ctrl+C to exit
+	•	`genie guard` secret + bloat scanner with regex heuristics
+	•	`genie insights` repository analytics + export-ready JSON
+	•	`genie projects --details` to inspect every registered workspace
+	•	Personal GitHub-style web dashboard aggregating all Genie projects
 
 ## Installation
 
@@ -90,6 +96,18 @@ genie man | man -l -
 
 # update to the latest release (when published)
 genie self-update
+
+# real-time monitor (prints only when things change)
+genie watch --interval 2 --files --deep
+
+# scan for gigantic files & secrets
+genie guard --strict
+
+# export analytics as JSON
+genie insights --json --top 10
+
+# inspect your global project registry
+genie projects --details --json
 ```
 
 ## Roadmap

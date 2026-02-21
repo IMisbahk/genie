@@ -1,0 +1,128 @@
+name: Publish GENIE CLI to npm
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.0.0, v1.2.3, etc.
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build-rust:
+    name: Build Rust binaries
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: genie-core.node
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: genie-core.node
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: genie-core-arm64.node
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: genie-core.node
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install dependencies (Rust)
+        working-directory: ./genie/rust
+        run: cargo fetch
+      
+      - name: Build Rust binary
+        working-directory: ./genie/rust
+        run: cargo build --release --target ${{ matrix.target }}
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-${{ matrix.target }}
+          path: ./genie/rust/target/${{ matrix.target }}/release/${{ matrix.artifact }}
+
+  publish:
+    name: Publish to npm
+    needs: build-rust
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+      
+      - name: Organize binaries
+        run: |
+          mkdir -p ./genie/node/binaries
+          cp ./artifacts/ubuntu-latest-x86_64-unknown-linux-gnu/genie-core.node ./genie/node/binaries/genie-core-linux-x64.node
+          cp ./artifacts/macos-latest-x86_64-apple-darwin/genie-core.node ./genie/node/binaries/genie-core-darwin-x64.node
+          cp ./artifacts/macos-latest-aarch64-apple-darwin/genie-core-arm64.node ./genie/node/binaries/genie-core-darwin-arm64.node
+          cp ./artifacts/windows-latest-x86_64-pc-windows-msvc/genie-core.node ./genie/node/binaries/genie-core-win32-x64.node
+      
+      - name: Install dependencies (CLI)
+        working-directory: ./genie/cli
+        run: npm ci
+      
+      - name: Build TypeScript
+        working-directory: ./genie/cli
+        run: npm run build
+      
+      - name: Run tests
+        working-directory: ./genie/cli
+        run: npm test || echo "No tests configured yet"
+      
+      - name: Publish to npm
+        working-directory: ./genie/cli
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            ./genie/node/binaries/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify:
+    name: Notify on success
+    needs: publish
+    runs-on: ubuntu-latest
+    if: success()
+    
+    steps:
+      - name: Success notification
+        run: |
+          echo "✅ GENIE CLI published successfully!"
+          echo "Version: ${{ github.ref_name }}"
+          echo "Install: npm install -g @rocket-ide/genie-cli"

@@ -1,0 +1,32 @@
+{
+  "name": "@imisbahk/genie",
+  "version": "1.0.0",
+  "description": "GENIE CLI - Universal Codebase Intelligence",
+  "keywords": ["codebase", "indexer", "mcp", "ai", "developer-tools"],
+  "repository": "https://github.com/rocket-ide/genie",
+  "license": "MIT",
+  "bin": {
+    "genie": "./bin/genie.js"
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node ./scripts/copy-native.cjs",
+    "dev": "tsc -p tsconfig.json --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "chalk": "^4.1.2",
+    "chokidar": "^3.6.0",
+    "commander": "^11.1.0",
+    "ora": "^5.4.1",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}

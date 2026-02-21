@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# npm link artifacts
+lib/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Editor / OS files
+.DS_Store
+.vscode/
+.idea/
+
+# Local runtime data
+.genie/
+.rocket/*
+!.rocket/README.md
+!.rocket/ARCHITECTURE.md
+!.rocket/SYMBOLS.md
+!.rocket/config.json
+.rocket/index.db
+.rocket/cache/

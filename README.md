@@ -5,7 +5,15 @@ Standalone GENIE CLI for codebase indexing, symbol search, dependency lookup, an
 ## Install
 
 ```bash
-npm install -g @imisbahk/genie
+npm i @imisbahk/genie
+```
+
+```bash
+bun install @imisbahk/genie
+```
+
+```bash
+pnpm install @imisbahk/genie
 ```
 
 Or run locally from this folder:

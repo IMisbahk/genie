@@ -2,11 +2,30 @@
   "name": "@imisbahk/genie",
   "version": "1.0.0",
   "description": "GENIE CLI - Universal Codebase Intelligence",
-  "keywords": ["codebase", "indexer", "mcp", "ai", "developer-tools"],
-  "repository": "https://github.com/rocket-ide/genie",
+  "keywords": [
+    "codebase",
+    "indexer",
+    "mcp",
+    "ai",
+    "developer-tools"
+  ],
+  "homepage": "https://github.com/imisbahk/genie#readme",
+  "bugs": {
+    "url": "https://github.com/imisbahk/genie/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imisbahk/genie.git"
+  },
   "license": "MIT",
+  "author": "Misbah Khursheed",
+  "type": "commonjs",
+  "main": "dist/index.js",
   "bin": {
-    "genie": "./bin/genie.js"
+    "genie": "bin/genie.js"
+  },
+  "directories": {
+    "lib": "lib"
   },
   "files": [
     "dist",

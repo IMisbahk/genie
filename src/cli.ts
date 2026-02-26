@@ -80,10 +80,10 @@ program.addHelpText(
   'after',
   `
 Examples:
-  genie index               Index current directory
-  genie search "User"       Find User symbol
-  genie deps app.ts         Show what app.ts imports
-  genie serve --stdio       Start MCP server for Claude Desktop
+  geniecli index               Index current directory
+  geniecli search "User"       Find User symbol
+  geniecli deps app.ts         Show what app.ts imports
+  geniecli serve --stdio       Start MCP server for Claude Desktop
 
 Learn more: https://rocket.com/docs/genie
 `

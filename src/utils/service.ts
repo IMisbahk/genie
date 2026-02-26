@@ -30,7 +30,7 @@ export async function createGenieService(
 
 export function ensureIndexExists(projectPath: string): void {
   if (!fs.existsSync(indexDbPath(projectPath))) {
-    throw new Error('No index found. Run `genie index` first.');
+    throw new Error('No index found. Run `geniecli index` first.');
   }
 }
 

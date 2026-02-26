@@ -8,13 +8,14 @@ import { searchCommand } from './commands/search';
 import { serveCommand } from './commands/serve';
 import { statusCommand } from './commands/status';
 import { summaryCommand } from './commands/summary';
+import pkg from '../package.json' assert { type: 'json' };
 
 const program = new Command();
 
 program
   .name('genie')
   .description('GENIE - Universal Codebase Intelligence')
-  .version('1.0.0');
+  .version(pkg.version);
 
 program
   .command('index [path]')
